@@ -2,11 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import warnings
 import math
-from sympy import symbols, Eq, solve, nsolve
+from sympy import symbols, Eq, solve, nsolve, solveset, S
 import sys
 
 
 ## Functions
+
+##----------------------------------------------------
+## Elastic properties
 
 def lower_murphy(por):
     """
@@ -84,6 +87,16 @@ def s_vel_mod(mu, dens):
     s = (mu/dens) ** 0.5
     return s
 
+def lame_mod(k, mu):
+    """
+    Calculate Lame's Constant from moduli
+    """
+    lame = k - (2*mu)/3
+    return lame
+
+
+##----------------------------------------------------
+## Bounds and mixing
 
 def voight_average(volume_fracts, moduli):
     """
@@ -255,6 +268,10 @@ def modified_hs_upper(k1, k2, u1, u2, porosity, critical_porosity):
     return k, u
 
 
+    
+##----------------------------------------------------
+## Models
+
 def hertz_mindlin(k_grain, mu_grain, crit_por, C, pressure, f=1):
     """
     Effective moduli, Hertz-Mindlin
@@ -336,7 +353,74 @@ def hertz_mindlin_angular(k_grain, mu_grain, por, C, pressure, Rc_ratio,
     
     return khm, uhm
 
+
+def digby(k_grain, mu_grain, por, C, pressure, bond_ratio=0.01):
+    """
+    Compute effective moduli using the Digby model
+    RP Handbook (2nd) pg.249
+
+    Inputs
+        k_grain: grain bulk modulus in GPa
+        mu_grain: grain shear bulk modulus in GPa
+        por: porosity (0-1)
+        C: coordination number
+        pressure: effective pressure in GPa
+        bond_ratio: ratio of bonded radius to grain radius
+
+    Returns
+        Effective bulk modulus in GPa
+        Effective shear modulus in GPa
+    """
+
+    poisson_grain = poisson_mod(k_grain, mu_grain)
+
+    dvar = symbols("dvar")
+    eq = Eq((dvar**3 + (3/2)*(bond_ratio**2)*dvar - (3*np.pi*(1-poisson_grain)*pressure)
+             /(2*C*(1-por)*mu_grain)), 0)
+    d = float(solveset(eq, "dvar", domain=S.Reals).args[0])
+
+    bR = np.sqrt(d**2 + bond_ratio**2)
+    SnR = (4*mu_grain*bR)/(1-poisson_grain)
+    StR = (8*mu_grain*bond_ratio)/(2-poisson_grain)
     
+    keff = ((C*(1-por))/(12*np.pi))*SnR
+    ueff = ((C*(1-por))/(20*np.pi))*(SnR + 1.5*StR)
+
+    return keff, ueff
+
+
+def walton(k_grain, mu_grain, por, C, pressure, mode):
+    """
+    Compute effective moduli using the Walton model
+    RP Handbook (2nd) pg.248
+
+    Inputs
+        k_grain: grain bulk modulus in GPa
+        mu_grain: grain shear bulk modulus in GPa
+        por: porosity (0-1)
+        C: coordination number
+        pressure: effective pressure in GPa
+        mode: can be "rough" or "smooth"
+
+    Returns
+        Effective bulk modulus in GPa
+        Effective shear modulus in GPa
+    """
+    assert mode.lower()=="rough" or mode.lower()=="smooth", "Input proper mode argument"
+    
+    lame_grain = lame_mod(k_grain, mu_grain)
+    A = (1/(4*np.pi))*((1/mu_grain)-(1/(mu_grain+lame_grain)))
+    B = (1/(4*np.pi))*((1/mu_grain)+(1/(mu_grain+lame_grain)))
+
+    if mode.lower()=="rough":
+        keff = (1/6)*((3*(1-por)**2*C**2*pressure)/(np.pi**4*B**2))**(1/3)
+        ueff = (3/5)*keff*((5*B+A)/2*B+A)
+
+    elif mode.lower()=="smooth":
+        ueff = (1/10)*((3*(1-por)**2*C**2*pressure)/(np.pi**4*B**2))**(1/3)
+        keff = (5/3)*ueff
+
+    return keff, ueff
 
 
 def uncemented_model(por, crit_por, Khm, Uhm, k_grain, mu_grain):
