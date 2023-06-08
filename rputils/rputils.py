@@ -14,10 +14,14 @@ import sys
 def lower_murphy(por):
     """
     Lower Murphy bound for estimating coordination
-    number from porosity
+    number from porosity (Murphy, 1982, Effects of 
+    microstructure and pore fluids on the acoustic 
+    properties of granular sedimentary materials)
     
-    Inputs
-        por: float (0-1)
+    Inputs:
+        por (float): porosity (0-1)
+    Returns:
+        coordination number (float)
     """
     n = 17.34 - 34*por + 14*(por**2)
     return n
@@ -26,10 +30,14 @@ def lower_murphy(por):
 def upper_murphy(por):
     """
     Upper Murphy bound for estimating coordination
-    number from porosity
+    number from porosity (Murphy, 1982, Effects of 
+    microstructure and pore fluids on the acoustic 
+    properties of granular sedimentary materials)
     
-    Inputs
-        por: float (0-1)
+    Inputs:
+        por (float): porosity (0-1)
+    Returns:
+        coordination number (float)
     """
     n = 20 - 34*por + 14*(por**2)
     return n
@@ -38,6 +46,12 @@ def upper_murphy(por):
 def poisson_vel(vp, vs):
     """
     Calculate Poisson's ratio from Vp and Vs
+
+    Inputs:
+        vp (float): p wave velocity in m/s or km/s
+        vs (float): p wave velocity in m/s or km/s
+    Returns:
+        Poisson's ratio (float)
     """
     v = 0.5 * (((vp/vs)**2)-2) / (((vp/vs)**2)-1)
     return v
@@ -46,6 +60,12 @@ def poisson_vel(vp, vs):
 def poisson_mod(k, mu):
     """
     Calculate Poisson's ration from moduli
+
+    Inputs:
+        k (float): bulk modulus in GPa
+        mu (float): shear modulus in GPa
+    Returns:
+        Poisson's ratio (float)
     """
     v = (3*k - 2*mu) / (2*(3*k + mu))
     return v
@@ -53,10 +73,14 @@ def poisson_mod(k, mu):
 
 def shear_mod(vs, dens):
     """
-    Calculate shear modulus from density (g/cm3) and Vs (km/s)
+    Calculate shear modulus
+    [Yes this naming convention is opposite of other functions]
     
+    Inputs:
+        vs (float): s wave velocity in km/s
+        dens (float): bulk density in g/cm3
     Returns:
-        Shear Modulus(GPa)
+        Shear Modulus (float) in GPa
     """
     u = dens * vs**2
     return u
@@ -64,10 +88,15 @@ def shear_mod(vs, dens):
 
 def bulk_mod(vp, vs, dens):
     """
-    Calculate bulk modulus from Vp(km/s), Vs(km/s), and Density(g/cm3)
-    
+    Calculate bulk modulus
+    [Yes this naming convention is opposite of other functions]
+
+    Inputs:
+        vp (float): p wave velocity in km/s
+        vs (float): s wave velocity in km/s
+        dens (float): bulk density in g/cm3
     Returns:
-        Bulk Modulus (GPa)
+        Bulk Modulus (float) in GPa
     """
     k = dens*(vp**2 - ((4/3)*(vs**2)))
     return k
@@ -76,6 +105,13 @@ def bulk_mod(vp, vs, dens):
 def p_vel_mod(k, mu, dens):
     """
     Calculate P velocity from moduli and density
+
+    Inputs:
+        k (float): bulk modulus in GPa
+        mu (float): shear modulus in GPa
+        dens (float): bulk density in g/cm3
+    Returns:
+        P wave velocity (float) in km/s
     """
     p = ((k + (4*mu)/3)/dens) ** 0.5
     return p
@@ -83,6 +119,12 @@ def p_vel_mod(k, mu, dens):
 def s_vel_mod(mu, dens):
     """
     Calculate S velocity from moduli and density
+
+    Inputs:
+        mu (float): shear modulus in GPa
+        dens (float): bulk density in g/cm3
+    Returns:
+        S wave velocity (float) in km/s
     """
     s = (mu/dens) ** 0.5
     return s
@@ -90,6 +132,12 @@ def s_vel_mod(mu, dens):
 def lame_mod(k, mu):
     """
     Calculate Lame's Constant from moduli
+
+    Inputs:
+        k (float): bulk modulus in GPa
+        mu (float): shear modulus in GPa
+    Returns:
+        Lame's constant (float)
     """
     lame = k - (2*mu)/3
     return lame
@@ -137,6 +185,24 @@ def reuss_average(volume_fracts, moduli):
         holder.append(f/m)
     r = (sum(holder))**-1
     return r
+
+
+def modified_reuss(mineral_moduli, frame_moduli, porosity, critical_porosity):
+    """
+    Calculate the modified reuss average.
+    Taken from Zimmer (2007, Part 2) but seems wonky
+
+    Inputs:
+        mineral_moduli (float): effective grain modulus
+        frame_moduli (float): frame modulus at pressure of interest
+        porosity (float): porosity (0-1)
+        critical_porosity (float):  NOTE, AUTHOR STATES THIS ISN'T CRITICAL POROSITY
+    """
+    phi_prime = porosity / critical_porosity
+
+    r = (phi_prime/frame_moduli) + ((1-phi_prime)/mineral_moduli)
+
+    return r**-1
 
 
 def hill_average(volume_fracts, moduli):
@@ -302,7 +368,7 @@ def hertz_mindlin(k_grain, mu_grain, crit_por, C, pressure, f=1):
     
     
 
-def hertz_mindlin_angular(k_grain, mu_grain, por, C, pressure, Rc_ratio, 
+def bachrach_angular_old(k_grain, mu_grain, por, C, pressure, Rc_ratio, 
                           cohesionless_percent=0, Rg=1):
     """
     Method from Bachran et al. 2000 to control radii of curvature between
@@ -334,7 +400,7 @@ def hertz_mindlin_angular(k_grain, mu_grain, por, C, pressure, Rc_ratio,
     
     F = (4 * np.pi * (Rg**2) * pressure) / (C * (1-por))
     
-    a = ((3 * F * (Rg*Rc_ratio) * (1-poisson_grain)) / (8 * mu_grain))**(1/3)
+    a = ((3 * F * Rc_ratio * (1-poisson_grain)) / (8 * mu_grain))**(1/3)
     
     Sn = (4*a*mu_grain)/(1-poisson_grain)
     St = (8*a*mu_grain)/(2-poisson_grain)
@@ -352,6 +418,44 @@ def hertz_mindlin_angular(k_grain, mu_grain, por, C, pressure, Rc_ratio,
         khm, uhm = hs_bound('lower', volume_fracts, bulk_mods, shear_mods)
     
     return khm, uhm
+
+def bachrach_angular(k_grain, mu_grain, por, C, pressure, c_ratio, 
+                          slip_percent=0, Rg=1):
+    """
+    Method from Bachran and Avseth 2008 
+    
+    Inputs
+        k_grain: grain bulk modulus in GPa
+        mu_grain: grain shear bulk modulus in GPa
+        por: porosity (0-1)
+        C: coordination number
+        pressure: effective pressure in GPa
+        c_ratio: describes contact angularity of grains, 1=spherical
+        slip_percent: percent of slipping grain contacts
+        Rg: grain radius (seems to be negligible)
+        
+    Returns
+        Effective bulk modulus in GPa
+        Effective shear modulus in GPa
+    """
+    assert c_ratio <= 1, "c_ratio should be value (0-1)"
+    assert slip_percent <= 1, "Rc_ratio should be value (0-1)"
+
+    ## Fixing "slip percent" since it should actually be "no-slip percent"
+    slip_percent = 1-slip_percent
+    
+    poisson_grain = poisson_mod(k_grain, mu_grain)
+    
+    keff = (((1-por)**2*mu_grain**2)/(18*np.pi**2*(1-poisson_grain)**2))**(1/3)*\
+            (C**2*c_ratio)**(1/3)*pressure**(1/3)
+
+    ueff = ((1/10)*((12*(1-por)**2*mu_grain**2)/(np.pi**2*(1-poisson_grain)**2))**(1/3)*\
+           (C**2*c_ratio)**(1/3)*pressure**(1/3)) + ((3/10)*((12*(1-por)**2*mu_grain**2*\
+            (1-poisson_grain))/(np.pi**2*(2-poisson_grain)**3))**(1/3) * (C**2*c_ratio)**(1/3)*\
+            pressure**(1/3)) * slip_percent
+
+                              
+    return keff, ueff
 
 
 def digby(k_grain, mu_grain, por, C, pressure, bond_ratio=0.01):
@@ -414,7 +518,7 @@ def walton(k_grain, mu_grain, por, C, pressure, mode):
 
     if mode.lower()=="rough":
         keff = (1/6)*((3*(1-por)**2*C**2*pressure)/(np.pi**4*B**2))**(1/3)
-        ueff = (3/5)*keff*((5*B+A)/2*B+A)
+        ueff = (3/5)*keff*((5*B+A)/(2*B+A))
 
     elif mode.lower()=="smooth":
         ueff = (1/10)*((3*(1-por)**2*C**2*pressure)/(np.pi**4*B**2))**(1/3)
