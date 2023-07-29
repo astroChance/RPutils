@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import warnings
 import math
 from sympy import symbols, Eq, solve, nsolve, solveset, S
+from scipy.optimize import curve_fit
 import sys
 
 
@@ -26,6 +27,52 @@ def lower_murphy(por):
     n = 17.34 - 34*por + 14*(por**2)
     return n
 
+def lower_murphy_bounded(por):
+    """
+    Calculate polynomial fit to lower Murphy (1982) equation
+    that has been clipped to Cmin=3. Only fit up to 0.7 porosity
+    
+    Inputs:
+        por (float): porosity (0-1)
+    Returns:
+        coordination number (float)
+    """
+    por = np.array([por])
+    por_range = np.arange(0., 0.71, 0.05)
+    
+    min_C = 3
+    murphy_vals = []
+    for p in por_range:
+        murphy_vals.append(lower_murphy(p))
+    murphy_vals = [min_C if i < min_C else i for i in murphy_vals]
+    murphy_fit = np.poly1d(np.polyfit(por_range, murphy_vals, deg=7))
+
+    C = np.array([murphy_fit(p) for p in por])
+    C = np.squeeze(np.clip(C, a_min=min_C, a_max=None))
+    return C
+
+def modified_murphy(por):
+    """
+    Modify the Murphy (1982) coordination number fit to produce 
+    lower values above 0.3 porosity and smoothly approach a
+    minimum value of 3. Only fit up to 0.7 porosity
+    
+    Inputs:
+        por (float): porosity (0-1)
+    Returns:
+        coordination number (float)
+    """
+    por = np.array([por])
+    por_range = np.array([0., 0.05, 0.15, 0.25, 0.35, 0.45, 0.6, 0.70])
+    c_vals = np.array([upper_murphy(0), upper_murphy(0.05), upper_murphy(0.15),
+                      upper_murphy(0.25), upper_murphy(0.35), 6., 3.2, 3])
+    
+    my_fit = np.poly1d(np.polyfit(por_range, c_vals, deg=3))
+
+    C = np.array([my_fit(p) for p in por])
+    C = np.squeeze(C)
+    return C
+
 
 def upper_murphy(por):
     """
@@ -39,7 +86,10 @@ def upper_murphy(por):
     Returns:
         coordination number (float)
     """
-    n = 20 - 34*por + 14*(por**2)
+    por = np.array(por)
+    # n = 20 - 34*por + 14*(por**2)  #linear formulation
+    # n = 24*np.exp(-2.547*por) - 0.3731  #provided in Zimmer 2007
+    n = 23.63*np.exp(-3.199*por) + 1.602  #based on least squares fit to data
     return n
 
 
@@ -200,9 +250,9 @@ def modified_reuss(mineral_moduli, frame_moduli, porosity, critical_porosity):
     """
     phi_prime = porosity / critical_porosity
 
-    r = (phi_prime/frame_moduli) + ((1-phi_prime)/mineral_moduli)
+    r = ((phi_prime/frame_moduli) + ((1-phi_prime)/mineral_moduli))**-1
 
-    return r**-1
+    return r
 
 
 def hill_average(volume_fracts, moduli):
@@ -218,7 +268,11 @@ def hill_average(volume_fracts, moduli):
 
 def modified_hill_average(volume_fracts, moduli, porosity, critical_porosity):
     """
-    Hill average between Modified Voight and Reuss averages
+    BROKEN: modified Voight assumes it is given the single average
+    moduli value, calling min and max on moduli likely a bas idea.
+    Likely don't need this function, come back to it later if required.
+    
+    Hill average between Modified Voight and Reuss averages.
     
     Assumes higher modulus is mineral, lower is suspension
     """
@@ -263,49 +317,78 @@ def hs_bound(bound, volume_fracts, bulk_mods, shear_mods, porosity=0):
         Bulk and Shear bounds in GPa
         
     """
-    assert len(volume_fracts) == len(bulk_mods) == len(shear_mods), "Check inputs to HS-Bound"
+    if not isinstance(volume_fracts, np.ndarray):
+        volume_fracts = np.array(volume_fracts)
+    if not isinstance(bulk_mods, np.ndarray):
+        bulk_mods = np.array(bulk_mods)
+    if not isinstance(shear_mods, np.ndarray):
+        shear_mods = np.array(shear_mods)
+    
+    assert volume_fracts.size == bulk_mods.size == shear_mods.size, "Check inputs to HS-Bound"
     assert sum(volume_fracts) == 1, "Check volume fractions for HS-Bound"
     assert bound.lower() == "upper" or bound.lower() == "lower", "Input correct Bound keyword (upper/lower)"
-    
-    volume_fracts = np.array(volume_fracts)
-    bulk_mods = np.array(bulk_mods)
-    shear_mods = np.array(shear_mods)
     
     fluid_loc = np.where(shear_mods==0)[0]
     
     if bound.lower() == "upper":
-        km = max(bulk_mods)
-        um = max(shear_mods)
+        try:
+            km = max(bulk_mods)
+            um = max(shear_mods)
+        except:
+            km = max([bulk_mods])
+            um = max([shear_mods])
         
     if bound.lower() == "lower":
-        km = min(bulk_mods)
-        um = min(shear_mods)
+        try:
+            km = min(bulk_mods)
+            um = min(shear_mods)
+        except:
+            km = min([bulk_mods])
+            um = min([shear_mods])
         
     zeta = (um/6) * ((9*km+8*um)/(km+2*um))
     
     k_holder = []
     u_holder = []
-        
-    for k, u, v in zip(bulk_mods, shear_mods, volume_fracts):
-        
-        if fluid_loc.size>0 and u == shear_mods[fluid_loc]:
-            k_val = porosity / (k + (4/3)*um)
-            if bound.lower() == "upper":
-                u_val = porosity / zeta
-            else:
-                u_val = 0
-        else:
-            k_val = ((1-porosity)*(v)) / (k + (4/3)*um)
-            if bound.lower() == "upper":
-                u_val = ((1-porosity)*(v)) / (u + zeta)
-            else:
-                if fluid_loc.size>0:
-                    u_val = 0
+
+    try:
+        for k, u, v in zip(bulk_mods, shear_mods, volume_fracts):
+            if fluid_loc.size>0 and u == shear_mods[fluid_loc]:
+                k_val = porosity / (k + (4/3)*um)
+                if bound.lower() == "upper":
+                    u_val = porosity / zeta
                 else:
+                    u_val = 0
+            else:
+                k_val = ((1-porosity)*(v)) / (k + (4/3)*um)
+                if bound.lower() == "upper":
                     u_val = ((1-porosity)*(v)) / (u + zeta)
-            
-        k_holder.append(k_val)
-        u_holder.append(u_val)
+                else:
+                    if fluid_loc.size>0:
+                        u_val = 0
+                    else:
+                        u_val = ((1-porosity)*(v)) / (u + zeta)
+            k_holder.append(k_val)
+            u_holder.append(u_val)
+    except:
+        for k, u, v in zip([bulk_mods], [shear_mods], [volume_fracts]):
+            if fluid_loc.size>0 and u == shear_mods[fluid_loc]:
+                k_val = porosity / (k + (4/3)*um)
+                if bound.lower() == "upper":
+                    u_val = porosity / zeta
+                else:
+                    u_val = 0
+            else:
+                k_val = ((1-porosity)*(v)) / (k + (4/3)*um)
+                if bound.lower() == "upper":
+                    u_val = ((1-porosity)*(v)) / (u + zeta)
+                else:
+                    if fluid_loc.size>0:
+                        u_val = 0
+                    else:
+                        u_val = ((1-porosity)*(v)) / (u + zeta)
+            k_holder.append(k_val)
+            u_holder.append(u_val)
         
         
     hs_k = (sum(k_holder)**-1) - (4/3) * um
@@ -419,10 +502,9 @@ def bachrach_angular_old(k_grain, mu_grain, por, C, pressure, Rc_ratio,
     
     return khm, uhm
 
-def bachrach_angular(k_grain, mu_grain, por, C, pressure, c_ratio, 
-                          slip_percent=0, Rg=1):
+def bachrach_angular(k_grain, mu_grain, por, C, pressure, c_ratio, slip_percent=0):
     """
-    Method from Bachran and Avseth 2008 
+    Method from Bachrach and Avseth 2008 
     
     Inputs
         k_grain: grain bulk modulus in GPa
@@ -432,14 +514,13 @@ def bachrach_angular(k_grain, mu_grain, por, C, pressure, c_ratio,
         pressure: effective pressure in GPa
         c_ratio: describes contact angularity of grains, 1=spherical
         slip_percent: percent of slipping grain contacts
-        Rg: grain radius (seems to be negligible)
         
     Returns
         Effective bulk modulus in GPa
         Effective shear modulus in GPa
     """
     assert c_ratio <= 1, "c_ratio should be value (0-1)"
-    assert slip_percent <= 1, "Rc_ratio should be value (0-1)"
+    assert slip_percent <= 1, "Slip should be value (0-1)"
 
     ## Fixing "slip percent" since it should actually be "no-slip percent"
     slip_percent = 1-slip_percent
@@ -456,6 +537,7 @@ def bachrach_angular(k_grain, mu_grain, por, C, pressure, c_ratio,
 
                               
     return keff, ueff
+
 
 
 def digby(k_grain, mu_grain, por, C, pressure, bond_ratio=0.01):
@@ -527,6 +609,164 @@ def walton(k_grain, mu_grain, por, C, pressure, mode):
     return keff, ueff
 
 
+def amos_model(por, crit_por, keff, ueff, k_grain, mu_grain, fit_por, max_poisson):
+    """
+    Use HS lower bound for K similar to Uncemented Model. Calculate
+    Mu based on trend between observed Poisson's ratio and the effective
+    mineral Poisson's ratio. Assumes PR of grain is smaller than PR of
+    granular mixture
+    
+    Inputs
+        por: Porosity for which solving for Effective Bulk Modulus
+        crit_por: critical porosity 
+        keff: effective bulk modulus at critical porosity
+        ueff: effective shear modulus at critical porosity
+        k_grain: grain bulk modulus in GPa
+        mu_grain: grain shear bulk modulus in GPa
+        fit_por: fitting porosity for max_poisson
+        max_poisson: maximum poisson ratio to fit (high porosity end)
+        
+    Returns
+        Effective bulk modulus in GPa 
+        Effective shear modulus in GPa 
+    """
+
+    k = ((((por/crit_por)/(keff+((4/3)*ueff)))+((1-(por/crit_por))/(k_grain+((4/3)*ueff))))\
+         **(-1)) - ((4/3)*ueff)
+
+    # ## Trying an inverse distance weighting for PR
+    # ## NOTE: inverse weighting appears to have worse results 
+    # ## than linear weighting below
+    # poisson_grain = poisson_mod(k_grain, mu_grain)
+    # dist_factor = (por / crit_por) * 100
+    # if dist_factor == 0:
+    #     target_poisson = poisson_grain
+    # else:
+    #     inv_factor = 1 / dist_factor
+    #     target_poisson = inv_factor*poisson_grain + (1-inv_factor)*max_poisson
+
+    ## Try using a root function to fit PR
+    def fit_func_bounded(x, vert_stretch, vert_translate):
+        horz_translate = 0.25
+        curve_factor = 0.25  # was using 0.2 previously
+        return vert_stretch * ((x-horz_translate)/(curve_factor + np.abs(x-horz_translate)))\
+                + vert_translate
+        
+    poisson_grain = poisson_mod(k_grain, mu_grain)
+    fit_x = [0, fit_por]
+    fit_y = [poisson_grain, max_poisson]
+    initial_guess = [0.2, 0.3]
+    fit_parms, _ = curve_fit(fit_func_bounded, fit_x, fit_y, p0=initial_guess)
+    target_poisson = fit_func_bounded(por, *fit_parms)
+        
+    ## Do linear interpolation of PR between grain PR and highest
+    ## observed PR in the data
+    # poisson_grain = poisson_mod(k_grain, mu_grain)
+    # por_scale_factor = por / fit_por
+    # poisson_diff = max_poisson - poisson_grain
+    # target_poisson = poisson_grain + por_scale_factor*poisson_diff
+
+    u = (3*k - 6*k*target_poisson)/(2*target_poisson + 2)
+    
+    return k, u
+
+
+def amos_isoframe_model(por, crit_por, keff, ueff, k_grain, mu_grain, fit_por, max_poisson, trans_por):
+
+    ## USING ISOFRAME MODEL MIX BELOW TRANSITION POROSITY
+    k1, k2 = k_grain, keff
+    u1, u2 = mu_grain, ueff
+    k_upper, _ = modified_hs_upper(k1, k2, u1, u2, por, crit_por)
+
+    effective_por = por/crit_por
+    bulk_mods = [keff, k_grain]
+    shear_mods = [ueff, mu_grain]
+    f1, f2 = effective_por, 1-effective_por
+    vol_fracts = [f1, f2]
+    k_lower, _ = hs_bound('lower', vol_fracts, bulk_mods, shear_mods)
+    # k_lower = ((((por/crit_por)/(keff+((4/3)*ueff)))+((1-(por/crit_por))/(k_grain+((4/3)*ueff))))\
+    #      **(-1)) - ((4/3)*ueff)
+
+    ## create an exponential scaler to apply to Upper/Lower mixing
+    ## since linear mixing produced harsh kink in moduli
+    x_scaling = np.arange(0,1., 0.002)
+    y_scaling = x_scaling**(1/100)
+    y_scaling = [(i-np.amin(y_scaling))/(np.amax(y_scaling)-np.amin(y_scaling)) for i in y_scaling]
+
+    if por >= trans_por:
+        k = k_lower
+    else:
+        trans_por_frac = por/trans_por
+        scale_idx = np.abs(x_scaling-trans_por_frac).argmin()
+        scale_val = y_scaling[scale_idx]
+        low_mix = scale_val * k_lower
+        upper_mix = (1-scale_val) * k_upper
+        k = low_mix + upper_mix
+
+    ## Try using a root function to fit PR
+    def fit_func_bounded(x, vert_stretch, vert_translate):
+        horz_translate = 0.25
+        curve_factor = 0.25  # was using 0.2 previously
+        return vert_stretch * ((x-horz_translate)/(curve_factor + np.abs(x-horz_translate)))\
+                + vert_translate
+        
+    poisson_grain = poisson_mod(k_grain, mu_grain)
+    fit_x = [0, fit_por]
+    fit_y = [poisson_grain, max_poisson]
+    initial_guess = [0.2, 0.3]
+    fit_parms, _ = curve_fit(fit_func_bounded, fit_x, fit_y, p0=initial_guess)
+    target_poisson = fit_func_bounded(por, *fit_parms)
+
+    u = (3*k - 6*k*target_poisson)/(2*target_poisson + 2)
+    
+    return k, u
+
+
+
+def amos_model_reuss(por, crit_por, keff, ueff, k_grain, mu_grain, fit_por, max_poisson):
+    """
+    Use modified Reuss bound for K. Calculate
+    Mu based on trend between observed Poisson's ratio and the effective
+    mineral Poisson's ratio. Assumes PR of grain is smaller than PR of
+    granular mixture
+    
+    Inputs
+        por: Porosity for which solving for Effective Bulk Modulus
+        crit_por: critical porosity 
+        keff: effective bulk modulus at critical porosity
+        ueff: effective shear modulus at critical porosity
+        k_grain: grain bulk modulus in GPa
+        mu_grain: grain shear bulk modulus in GPa
+        fit_por: fitting porosity for max_poisson
+        max_poisson: maximum poisson ratio to fit (high porosity end)
+        
+    Returns
+        Effective bulk modulus in GPa 
+        Effective shear modulus in GPa 
+    """
+    high_por = 0.6  ## testing, author states this differs from crit por
+    k = modified_reuss(k_grain, keff, por, high_por)
+
+
+    ## Try using a root function to fit PR
+    def fit_func_bounded(x, vert_stretch, vert_translate):
+        horz_translate = 0.3
+        curve_factor = 0.2
+        return vert_stretch * ((x-horz_translate)/(curve_factor + np.abs(x-horz_translate)))\
+                + vert_translate
+        
+    poisson_grain = poisson_mod(k_grain, mu_grain)
+    fit_x = [0, fit_por]
+    fit_y = [poisson_grain, max_poisson]
+    initial_guess = [0.2, 0.3]
+    fit_parms, _ = curve_fit(fit_func_bounded, fit_x, fit_y, p0=initial_guess)
+    target_poisson = fit_func_bounded(por, *fit_parms)
+
+    u = (3*k - 6*k*target_poisson)/(2*target_poisson + 2)
+    
+    return k, u
+
+
 def uncemented_model(por, crit_por, Khm, Uhm, k_grain, mu_grain):
     """
     Effective moduli, uncemented sand model. Uses a modified
@@ -540,6 +780,7 @@ def uncemented_model(por, crit_por, Khm, Uhm, k_grain, mu_grain):
         Khm: Hertz-Mindlin bulk modulus
         Uhm: Hertz-Mindlin shear modulus
         k_grain: grain bulk modulus in GPa
+        mu_grain: grain shear bulk modulus in GPa
         
     Returns
         Effective bulk modulus in GPa 
