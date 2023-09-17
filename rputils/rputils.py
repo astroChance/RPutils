@@ -1,3 +1,9 @@
+"""
+Includes various functions including elastic properties, bounds
+and mixing laws, and assorted rock physics models
+"""
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import warnings
@@ -24,6 +30,7 @@ def lower_murphy(por):
     Returns:
         coordination number (float)
     """
+    por = np.array(por)
     n = 17.34 - 34*por + 14*(por**2)
     return n
 
@@ -103,6 +110,8 @@ def poisson_vel(vp, vs):
     Returns:
         Poisson's ratio (float)
     """
+    vp = np.array(vp)
+    vs = np.array(vs)
     v = 0.5 * (((vp/vs)**2)-2) / (((vp/vs)**2)-1)
     return v
 
@@ -666,6 +675,10 @@ def amos_model(por, crit_por, keff, ueff, k_grain, mu_grain, fit_por, max_poisso
     # poisson_diff = max_poisson - poisson_grain
     # target_poisson = poisson_grain + por_scale_factor*poisson_diff
 
+    ## make sure PR values aren't above 0.5 
+    if target_poisson > 0.495:
+        target_poisson = 0.495
+
     u = (3*k - 6*k*target_poisson)/(2*target_poisson + 2)
     
     return k, u
@@ -690,7 +703,7 @@ def amos_isoframe_model(por, crit_por, keff, ueff, k_grain, mu_grain, fit_por, m
     ## create an exponential scaler to apply to Upper/Lower mixing
     ## since linear mixing produced harsh kink in moduli
     x_scaling = np.arange(0,1., 0.002)
-    y_scaling = x_scaling**(1/100)
+    y_scaling = x_scaling**(1/50)
     y_scaling = [(i-np.amin(y_scaling))/(np.amax(y_scaling)-np.amin(y_scaling)) for i in y_scaling]
 
     if por >= trans_por:
@@ -716,6 +729,10 @@ def amos_isoframe_model(por, crit_por, keff, ueff, k_grain, mu_grain, fit_por, m
     initial_guess = [0.2, 0.3]
     fit_parms, _ = curve_fit(fit_func_bounded, fit_x, fit_y, p0=initial_guess)
     target_poisson = fit_func_bounded(por, *fit_parms)
+
+    ## make sure PR values aren't above 0.5 
+    if target_poisson > 0.495:
+        target_poisson = 0.495
 
     u = (3*k - 6*k*target_poisson)/(2*target_poisson + 2)
     
