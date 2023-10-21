@@ -17,4 +17,7 @@ setup(name=package_name,
       description='Library of rock physics utilities',
       author='Chance Amos',
       author_email='camos@mines.edu',
-      packages = find_packages())
+      packages = find_packages(),
+      install_requires=[
+          'numpy',
+          'scipy'])
