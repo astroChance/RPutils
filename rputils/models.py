@@ -408,8 +408,8 @@ def amos_isoframe_model(por, crit_por, keff, ueff, k_grain, mu_grain, fit_por, m
     target_poisson = fit_func_bounded(por, *fit_parms)
 
     ## make sure PR values aren't above 0.5 
-    if target_poisson > 0.495:
-        target_poisson = 0.495
+    if target_poisson > 0.47:
+        target_poisson = 0.47
 
     u = (3*k - 6*k*target_poisson)/(2*target_poisson + 2)
     
@@ -512,7 +512,7 @@ def patchy_ice_model(por, crit_por, C,
     assert np.all((por >= 0) & (por <= 1)), "Porosity values out of bounds (0-1)"
     assert 0 <= fit_por <= 1, "Fitting porosity out of bounds (0-1)" 
     assert 0 <= trans_por <= 1, "Transition porosity out of bounds (0-1)"
-    assert 0 <= max_poisson <= 0.5, "Max-Poisson out of bounds (0-0.5)"
+    # assert 0 <= max_poisson <= 0.5, "Max-Poisson out of bounds (0-0.5)"
     assert 0 <= max_cement <= 1, "max_cement out of bounds (0-1), suggest below 0.15" 
     assert 0 <= mix_amount <= 1, "mix_amount out of bounds (0-1)" 
 
@@ -523,6 +523,9 @@ def patchy_ice_model(por, crit_por, C,
     assert patchy_scheme in patchy_schemes_allowed, \
         "Patchy scheme must be 'soft' or 'stiff'"
 
+    ## make sure PR values aren't above 0.5 
+    if max_poisson > 0.47:
+        max_poisson = 0.47
 
     ##-------------------------------
     ## MODELING
@@ -548,8 +551,9 @@ def patchy_ice_model(por, crit_por, C,
     for p in por:
 
         ## Only calculate up to max uncemented porosity
-        if p > mix_por:
-            continue
+        ## THIS CAUSES NANS IN LUNAR MODEL
+        # if p > mix_por:
+        #     continue
 
 
         ##!!!!!!!!!!!!!!!!!!
@@ -561,6 +565,7 @@ def patchy_ice_model(por, crit_por, C,
         # dens_patchy.append(float(dens))
   #-      # if I let bulk density decrease as below, velocity oddly increases
   #-      # maybe if I also change out the effective mineral moduli this would fix
+
         tmp_ice_vol = mix_amount * max_cement
         tmp_grain_dens = sum([f*d for f, d in zip([1-tmp_ice_vol, tmp_ice_vol], [dens_grain, dens_ice])])
         dens =  (tmp_grain_dens) * (1-p)
