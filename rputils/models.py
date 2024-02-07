@@ -468,7 +468,7 @@ def patchy_ice_model(por, crit_por, C,
                      k_ice, u_ice, dens_ice,
                      fit_por, trans_por, max_poisson,
                      contact_scheme, max_cement,
-                     patchy_scheme, mix_amount):
+                     patchy_scheme, mix_amount, ice_perc):
     """
     Use Avseth's et al. (2016) Patchy Cement Model concept to create patchy 
     mix between Contact Cement model and Amos Isoframe model 
@@ -492,6 +492,7 @@ def patchy_ice_model(por, crit_por, C,
         max_cement (float 0-1): maximum amount of cement, suggest less than 0.15
         patchy_scheme (str): mixing scheme for Patchy Cement, "soft" or "stiff"
         mix_amount (float 0-1): ratio between minimum and maximum using patchy_scheme
+        ice_perc (float 0-1): volume percent ice
 
     Returns
         k_patchy (array): bulk moduli of patchy mix
@@ -540,11 +541,12 @@ def patchy_ice_model(por, crit_por, C,
     ## Create stiff mix
     tmp_k_stiff, tmp_u_stiff = bounds.hs("upper", [mix_amount, 1-mix_amount], [kcem, keff], [ucem, ueff])
 
+    ## DEPRECATED
     ## Create effective icy mineral
-    norm_val = k_grain - k_ice
-    tmp_k_mix = norm_val - (norm_val * (mix_amount * max_cement)) + k_ice
-    norm_val = mu_grain - u_ice
-    tmp_u_mix = norm_val - (norm_val * (mix_amount * max_cement)) + u_ice
+    # norm_val = k_grain - k_ice
+    # tmp_k_mix = norm_val - (norm_val * (mix_amount * max_cement)) + k_ice
+    # norm_val = mu_grain - u_ice
+    # tmp_u_mix = norm_val - (norm_val * (mix_amount * max_cement)) + u_ice
 
     k_patchy, u_patchy, dens_patchy = [], [], []
     mix_por = crit_por-(mix_amount*max_cement)  # Max uncemented porosity
@@ -574,19 +576,30 @@ def patchy_ice_model(por, crit_por, C,
         ## Use uncemented model for Stiff moduli
         if patchy_scheme.lower() == "stiff":
             if mix_amount == 0:
+                # k_tmp, u_tmp = amos_isoframe_model(p, mix_por, tmp_k_soft, tmp_u_soft,
+                #                                 tmp_k_mix, tmp_u_mix, fit_por = fit_por, 
+                #                                   max_poisson=max_poisson, trans_por=trans_por)
+                ## REPLACE _mix VARIABLES WITH NEW UPDATED _grain FOR HIGH ICE
                 k_tmp, u_tmp = amos_isoframe_model(p, mix_por, tmp_k_soft, tmp_u_soft,
-                                                tmp_k_mix, tmp_u_mix, fit_por = fit_por, 
+                                                k_grain, mu_grain, fit_por = fit_por, 
                                                   max_poisson=max_poisson, trans_por=trans_por)
             else:
+                # k_tmp, u_tmp = modified_uncemented_model(p, mix_por, tmp_k_stiff, tmp_u_stiff, 
+                #                                  tmp_k_mix, tmp_u_mix, trans_por=trans_por)
+                ## REPLACE _mix VARIABLES WITH NEW UPDATED _grain FOR HIGH ICE
                 k_tmp, u_tmp = modified_uncemented_model(p, mix_por, tmp_k_stiff, tmp_u_stiff, 
-                                                 tmp_k_mix, tmp_u_mix, trans_por=trans_por)
+                                                 k_grain, mu_grain, trans_por=trans_por)
             k_patchy.append(k_tmp)
             u_patchy.append(u_tmp)
 
         ## Use Amos model for Soft moduli
         elif patchy_scheme.lower() == "soft":
+            # k_tmp, u_tmp = amos_isoframe_model(p, mix_por, tmp_k_soft, tmp_u_soft,
+            #                                     tmp_k_mix, tmp_u_mix, fit_por = fit_por, 
+            #                                       max_poisson=max_poisson, trans_por=trans_por)
+            ## REPLACE _mix VARIABLES WITH NEW UPDATED _grain FOR HIGH ICE
             k_tmp, u_tmp = amos_isoframe_model(p, mix_por, tmp_k_soft, tmp_u_soft,
-                                                tmp_k_mix, tmp_u_mix, fit_por = fit_por, 
+                                                k_grain, mu_grain, fit_por = fit_por, 
                                                   max_poisson=max_poisson, trans_por=trans_por)
             k_patchy.append(k_tmp)
             u_patchy.append(u_tmp)
